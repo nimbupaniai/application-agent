@@ -18,9 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
       tabs.forEach((t) => t.classList.remove('active'));
       tab.classList.add('active');
       currentTab = tab.dataset.tab;
-      if (currentTab === 'html') {
-        // For HTML tab, show the complete HTML with embedded CSS
-        output.value = `<!DOCTYPE html>
+      updateOutput();
+    });
+  });
+
+  function updateOutput() {
+    if (currentTab === 'html') {
+      output.value = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
@@ -33,10 +37,18 @@ ${scrapedData.css}
 ${scrapedData.html}
 </body>
 </html>`;
-      } else {
-        output.value = scrapedData[currentTab] || '';
-      }
-    });
+    } else {
+      output.value = scrapedData[currentTab] || '';
+    }
+  }
+
+  // Listen for scraping results
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'scrapingComplete') {
+      scrapedData = message.data;
+      updateOutput();
+      status.textContent = 'Scraping complete!';
+    }
   });
 
   // Scrape button click handler
@@ -54,69 +66,29 @@ ${scrapedData.html}
         throw new Error('No active tab found');
       }
 
-      // Inject and execute content script directly
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        function: () => {
-          // Get HTML content (only the body content)
-          const bodyContent = document.body.innerHTML;
-
-          // Get CSS
-          const cssRules = [];
-          for (const sheet of document.styleSheets) {
-            try {
-              for (const rule of sheet.cssRules) {
-                cssRules.push(rule.cssText);
-              }
-            } catch (e) {
-              // If we can't access the rules (e.g., for cross-origin stylesheets)
-              // Try to get the href and add it as a link
-              if (sheet.href) {
-                cssRules.push(`/* External stylesheet: ${sheet.href} */`);
-                cssRules.push(`@import url("${sheet.href}");`);
-              }
-              continue;
-            }
-          }
-
-          // Get inline styles
-          const elementsWithStyle = document.querySelectorAll('[style]');
-          elementsWithStyle.forEach((element) => {
-            cssRules.push(
-              `/* Inline style for ${element.tagName.toLowerCase()} */\n${element.getAttribute(
-                'style'
-              )}`
-            );
-          });
-
-          return {
-            html: bodyContent,
-            css: cssRules.join('\n'),
-          };
-        },
-      });
-
-      if (results && results[0]) {
-        scrapedData = results[0].result;
-        // Show the complete HTML with embedded CSS by default
-        output.value = `<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Scraped Page</title>
-    <style>
-${scrapedData.css}
-    </style>
-</head>
-<body>
-${scrapedData.html}
-</body>
-</html>`;
-        status.textContent = 'Scraping complete!';
+      // Check if URL exists first
+      if (!tab.url) {
+        throw new Error('No URL found for current tab');
       }
+
+      // Then check if URL is valid
+      if (
+        tab.url.startsWith('chrome://') ||
+        tab.url.startsWith('chrome-extension://') ||
+        tab.url.startsWith('edge://')
+      ) {
+        throw new Error('Cannot scrape browser system pages');
+      }
+
+      chrome.runtime.sendMessage({
+        action: 'startScraping',
+        tabId: tab.id,
+        url: tab.url,
+      });
     } catch (err) {
       status.textContent = `Error: ${err.message}`;
       console.error('Scraping error:', err);
+      output.value = 'This page cannot be scraped due to browser restrictions.';
     }
   });
 
@@ -140,5 +112,13 @@ ${scrapedData.html}
     a.click();
     URL.revokeObjectURL(url);
     status.textContent = 'File downloaded!';
+  });
+
+  // Add this to your existing event listeners in popup.js
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'scrapingError') {
+      status.textContent = message.error;
+      output.value = message.error;
+    }
   });
 });

@@ -3,11 +3,21 @@
   "name": "HTML/CSS Scraper",
   "version": "1.0",
   "description": "A Chrome extension to scrape HTML and CSS from websites",
-  "permissions": ["activeTab", "scripting", "tabs"],
+  "permissions": ["activeTab", "scripting", "tabs", "webNavigation"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html"
   },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
   "icons": {
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
